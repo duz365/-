@@ -1,0 +1,8 @@
+# 统一用 LF，避免在 Windows 提交、在 Linux 部署时出现换行差异
+* text=auto eol=lf
+*.js   text eol=lf
+*.mjs  text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf

@@ -1,0 +1,20 @@
+{
+  "name": "honghuanglv",
+  "version": "0.4.0",
+  "private": true,
+  "description": "《红黄绿》—— 纯文字多人推理对抗游戏（悬疑推理 / 阵营对抗 / 线索争夺）",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node mvp/src/net/server.js",
+    "net": "node mvp/src/net/server.js",
+    "play": "node mvp/src/cli.js",
+    "watch": "node mvp/src/watch.js",
+    "sim": "node mvp/src/sim.js",
+    "test": "node mvp/test/run.js && node mvp/test/net.test.js",
+    "test:rules": "node mvp/test/run.js",
+    "test:net": "node mvp/test/net.test.js",
+    "test:balance": "node mvp/test/balance.js 10"
+  }
+}

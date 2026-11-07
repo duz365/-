@@ -1,0 +1,15 @@
+﻿{
+  "name": "honghuanglv-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "《红黄绿》文字版 MVP —— 悬疑推理 / 阵营对抗 / 线索争夺",
+  "scripts": {
+    "play": "node src/cli.js",
+    "watch": "node src/watch.js",
+    "net": "node src/net/server.js",
+    "test:net": "node test/net.test.js",
+    "sim": "node src/sim.js",
+    "test": "node test/run.js"
+  }
+}

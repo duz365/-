@@ -1,0 +1,281 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>红黄绿 · 文字版</title>
+<style>
+  :root { --bg:#0f1115; --fg:#d8dee9; --dim:#7a8496; --line:#242a35; --accent:#e5c07b; --red:#e06c75; --yellow:#e5c07b; --green:#98c379; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.6 "Cascadia Mono", "Consolas", "Sarasa Mono SC", monospace; display: flex; flex-direction: column; }
+  header { padding: 8px 14px; border-bottom: 1px solid var(--line); display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  header b { color: var(--accent); letter-spacing: 1px; }
+  .dim { color: var(--dim); }
+  #status { padding: 8px 14px; border-bottom: 1px solid var(--line); white-space: pre-wrap; }
+  #main { flex: 1; display: flex; min-height: 0; }
+  #log { flex: 1; overflow-y: auto; padding: 10px 14px; white-space: pre-wrap; }
+  #side { width: 300px; border-left: 1px solid var(--line); padding: 10px 12px; overflow-y: auto; font-size: 13px; }
+  #side h3 { margin: 10px 0 6px; font-size: 13px; color: var(--accent); font-weight: normal; border-bottom: 1px dashed var(--line); padding-bottom: 4px; }
+  #bottom { border-top: 1px solid var(--line); padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+  #prompt { white-space: pre-wrap; color: var(--accent); }
+  #buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+  button { background: #1a1f28; color: var(--fg); border: 1px solid var(--line); padding: 5px 10px; border-radius: 4px; cursor: pointer; font: inherit; }
+  button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  button:disabled { opacity: .35; cursor: default; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  input, select { background: #141922; color: var(--fg); border: 1px solid var(--line); padding: 6px 8px; border-radius: 4px; font: inherit; }
+  input { flex: 1; }
+  .chatline { white-space: pre-wrap; }
+  .tag { color: var(--dim); }
+  .mark { color: var(--red); }
+  .ok { color: var(--green); }
+  #overlay { position: fixed; inset: 0; background: #0f1115ee; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  #overlay .card { max-width: 520px; width: 100%; border: 1px solid var(--line); padding: 20px; border-radius: 6px; background: #12161d; }
+  #overlay .card h2 { margin: 0 0 12px; color: var(--accent); font-weight: normal; }
+  #overlay .card p { color: var(--dim); margin: 0 0 16px; }
+  .stack { display: flex; flex-direction: column; gap: 10px; }
+  @media (max-width: 860px) { #side { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <b>红黄绿 · 文字版</b>
+  <span id="room" class="dim">未加入</span>
+  <span id="phase" class="dim"></span>
+  <span id="who" class="dim"></span>
+  <span style="flex:1"></span>
+  <span id="conn" class="dim">未连接</span>
+  <button id="startGame" style="display:none">开局（不足补机器人）</button>
+</header>
+
+<div id="status">状态：尚未开局</div>
+
+<div id="main">
+  <div id="log"></div>
+  <aside id="side">
+    <h3>你在哪</h3>
+    <div id="where" class="dim">—</div>
+    <h3>携带线索</h3>
+    <div id="clues" class="dim">—</div>
+    <h3>频道</h3>
+    <div id="chan" class="dim">—</div>
+  </aside>
+</div>
+
+<div id="bottom">
+  <div id="prompt" class="dim">等待开局……</div>
+  <div id="buttons"></div>
+  <div class="row">
+    <input id="cmd" placeholder="输入指令（看 / 搜证 / 拾取 1 / 移动 安全区甲 / 攻击 某人 …）" autocomplete="off" />
+    <button id="send" disabled>执行</button>
+  </div>
+  <div class="row">
+    <select id="channel">
+      <option value="area">区域</option>
+      <option value="public">公开会</option>
+      <option value="faction">阵营</option>
+      <option value="ghost">幽灵</option>
+    </select>
+    <input id="chat" placeholder="说话（60 字以内，同频道可见）" maxlength="60" autocomplete="off" />
+    <button id="chatSend" disabled>发送</button>
+  </div>
+</div>
+
+<div id="overlay">
+  <div class="card stack">
+    <h2>《红黄绿》</h2>
+    <p>纯文字推理 · 阵营对抗 · 6–10 人。输入名字加入房间，房主开局后不足 6 人由机器人补位。</p>
+    <div class="row"><input id="name" placeholder="你的名字" maxlength="6" /></div>
+    <div class="row"><input id="roomId" placeholder="房间号（留空则新建）" /></div>
+    <div class="row">
+      <button id="enter">加入 / 新建</button>
+      <button id="startBtn" disabled>开局（房主）</button>
+    </div>
+    <div id="msg" class="dim"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { roomId: null, playerId: null, token: null, promptId: null, es: null, started: false };
+
+function log(text, cls = '') {
+  const div = document.createElement('div');
+  div.className = cls;
+  div.textContent = text;
+  $('log').appendChild(div);
+  $('log').scrollTop = $('log').scrollHeight;
+  while ($('log').childElementCount > 500) $('log').firstElementChild.remove();
+}
+
+async function post(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  return r.json();
+}
+
+// ---------------------------------------------------------------- 加入
+$('enter').onclick = async () => {
+  const name = ($('name').value || '').trim() || '玩家';
+  let roomId = ($('roomId').value || '').trim().toUpperCase();
+  if (!roomId) {
+    const c = await post('/api/create', { playerCount: 8 });
+    if (!c.ok) return ($('msg').textContent = c.msg || '建房失败');
+    roomId = c.roomId;
+  }
+  const r = await post('/api/join', { roomId, name });
+  if (!r.ok) return ($('msg').textContent = r.msg || '加入失败');
+  state.roomId = r.roomId; state.playerId = r.playerId; state.token = r.token;
+  $('overlay').style.display = 'none';
+  $('room').textContent = `房间 ${r.roomId} · 你 ${name}`;
+  $('who').textContent = `座位 #${r.playerId + 1}`;
+  $('startGame').style.display = '';
+  connect();
+};
+
+async function doStart() {
+  const r = await post('/api/start', { roomId: state.roomId, playerId: state.playerId, token: state.token, fillBots: true, minPlayers: 6 });
+  if (!r.ok) $('msg').textContent = r.msg || '开局失败';
+}
+$('startBtn').onclick = doStart;
+$('startGame').onclick = doStart;
+
+// ---------------------------------------------------------------- SSE
+function connect() {
+  const es = new EventSource(`/api/events?roomId=${state.roomId}&playerId=${state.playerId}&token=${state.token}`);
+  state.es = es;
+  es.onopen = () => { $('conn').textContent = '已连接'; };
+  es.onerror = () => { $('conn').textContent = '重连中…'; };
+  es.onmessage = (ev) => handle(JSON.parse(ev.data));
+}
+
+function handle(msg) {
+  switch (msg.type) {
+    case 'hello':
+      log(`=== 你是「${msg.self.name}」 · ${msg.self.faction === 'killer' ? '凶手' : '侦探'} ===`, 'ok');
+      log(`个人目标：${msg.self.goal?.name} —— ${msg.self.goal?.desc}`, 'dim');
+      if (msg.self.goal?.target) log(`目标对象：${msg.self.goal.target}`, 'dim');
+      if (msg.self.mates?.length) log(`同伙：${msg.self.mates.join('、')}（阵营频道可用）`, 'mark');
+      if (msg.self.weapon) log(`武器：${msg.self.weapon} · ${msg.self.ammo} 次`, 'dim');
+      $('startBtn').disabled = true;
+      $('startGame').style.display = 'none';
+      $('chatSend').disabled = false;
+      $('send').disabled = false;
+      break;
+    case 'lobby':
+      $('prompt').textContent = `等待房主开局……（当前 ${msg.status.seats.length}/${msg.status.capacity} 人）`;
+      $('startBtn').disabled = false;
+      $('startGame').style.display = '';
+      break;
+    case 'events':
+      for (const e of msg.items) log(fmtEv(e), e.kind === 'elim' || e.kind === 'end' ? 'mark' : '');
+      break;
+    case 'prompt':
+      renderPrompt(msg);
+      break;
+    case 'notice':
+      log(msg.text, 'mark');
+      break;
+    case 'promptTimeout':
+      log('（超时未回应，系统代你选了保守选项）', 'dim');
+      clearPrompt();
+      break;
+    case 'resync':
+      $('prompt').textContent = '已重新连接，等待你的回合……';
+      break;
+    case 'end':
+      clearPrompt();
+      log('===== 结算 =====', 'ok');
+      log(msg.result.who === 'detective' ? '侦探阵营胜利' : msg.result.who === 'killer' ? '凶手阵营胜利' : '平局（悬案）', 'ok');
+      for (const p of msg.players) log(`${p.name} · ${p.faction === 'killer' ? '凶手' : '侦探'} · 目标${p.goalDone ? '达成' : '未达成'} · 红标 ${p.marks} · ${p.alive ? '存活' : '出局'}`, 'dim');
+      for (const r of msg.scoreboard) log(`${String(r.score.total).padStart(3)} 分  ${r.name}`, '');
+      $('send').disabled = true; $('chatSend').disabled = true;
+      break;
+    case 'error':
+      log('错误：' + msg.msg, 'mark');
+      break;
+  }
+}
+
+function fmtEv(e) {
+  const t = `${String(Math.floor(e.tick / 60)).padStart(2, '0')}:${String(e.tick % 60).padStart(2, '0')}`;
+  return `[${t}] ${e.text}`;
+}
+
+// ---------------------------------------------------------------- 提示与行动
+function clearPrompt() {
+  state.promptId = null;
+  $('buttons').innerHTML = '';
+}
+
+function renderPrompt(msg) {
+  state.promptId = msg.id;
+  $('prompt').textContent = msg.prompt || '';
+  const wrap = $('buttons');
+  wrap.innerHTML = '';
+
+  if (msg.kind === 'turn') {
+    if (msg.status) {
+      $('status').textContent = msg.status.lines.join('\n');
+      $('where').textContent = msg.status.where;
+      $('clues').textContent = msg.status.clues;
+      $('chan').textContent = (msg.status.channels || []).join(' / ');
+      fillChannels(msg.status.channels || []);
+      $('phase').textContent = `· ${msg.status.phase} · 第 ${msg.status.round} 轮`;
+    }
+    for (const a of (msg.actions || [])) {
+      const b = document.createElement('button');
+      b.textContent = a.label;
+      b.onclick = () => answer(a.action);
+      wrap.appendChild(b);
+    }
+  } else {
+    for (const o of (msg.options || [])) {
+      const b = document.createElement('button');
+      b.textContent = o.label;
+      b.onclick = () => answer(o.value);
+      wrap.appendChild(b);
+    }
+  }
+}
+
+async function answer(value) {
+  if (!state.promptId) return;
+  const id = state.promptId;
+  clearPrompt();
+  const r = await post('/api/answer', { roomId: state.roomId, playerId: state.playerId, token: state.token, promptId: id, value });
+  if (!r.ok) log('回应失败：' + (r.msg || ''), 'mark');
+}
+
+$('send').onclick = () => {
+  const text = ($('cmd').value || '').trim();
+  if (!text) return;
+  $('cmd').value = '';
+  answer(text);
+};
+$('cmd').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('send').click(); });
+
+// ---------------------------------------------------------------- 聊天
+function fillChannels(list) {
+  const sel = $('channel');
+  const keep = sel.value;
+  sel.innerHTML = '';
+  for (const c of list) {
+    const o = document.createElement('option');
+    o.value = c; o.textContent = c === 'area' ? '区域' : c === 'public' ? '公开会' : c === 'faction' ? '阵营' : '幽灵';
+    sel.appendChild(o);
+  }
+  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+}
+
+$('chatSend').onclick = async () => {
+  const text = ($('chat').value || '').trim();
+  if (!text) return;
+  const r = await post('/api/chat', { roomId: state.roomId, playerId: state.playerId, token: state.token, channel: $('channel').value, text });
+  if (!r.ok) log('发言失败：' + (r.msg || ''), 'mark');
+  else $('chat').value = '';
+};
+$('chat').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('chatSend').click(); });
+</script>
+</body>
+</html>
