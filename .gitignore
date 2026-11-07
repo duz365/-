@@ -14,3 +14,7 @@ Thumbs.db
 # 本地环境变量（Railway 上在面板里配）
 .env
 .env.*
+
+# 本地部署工具（Railway CLI）
+.tools/
+

@@ -1,0 +1,6 @@
+# `railway up` 上传时排除的内容（减小体积、避免传本地产物）
+.git
+.tools
+node_modules
+*.log
+out.txt
