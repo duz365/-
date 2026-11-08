@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
@@ -110,32 +110,78 @@ function log(text, cls = '') {
 }
 
 async function post(path, body) {
-  const r = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  return r.json();
+  try {
+    const r = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const ct = r.headers.get('content-type') || '';
+    if (!ct.includes('json')) {
+      const txt = (await r.text()).slice(0, 160);
+      return { ok: false, msg: `服务器返回了非 JSON（HTTP ${r.status}）：${txt}` };
+    }
+    return await r.json();
+  } catch (e) {
+    return {
+      ok: false,
+      msg: `网络错误：${e.message}。若地址栏不是 http(s):// 开头，说明你打开的是本地文件，请改用服务器域名。`,
+    };
+  }
 }
+
+function notice(text) {
+  const el = document.getElementById('msg');
+  if (el) el.textContent = text;
+  log(text, 'mark');
+}
+
+window.addEventListener('error', (e) => notice('脚本错误：' + (e.message || e.type)));
+window.addEventListener('unhandledrejection', (e) => notice('未处理的错误：' + (e.reason && e.reason.message ? e.reason.message : e.reason)));
+
+// 启动自检：确认页面和后端在同一个源上（file:// 打开时这里会直接报错）
+(async () => {
+  try {
+    const r = await fetch('/api/ping', { cache: 'no-store' });
+    const j = await r.json();
+    notice(j && j.ok ? `服务器已连接 · v${j.version} · 房间 ${j.rooms}` : '后端响应异常：' + JSON.stringify(j).slice(0, 80));
+  } catch (e) {
+    notice('连不上后端（/api/ping 失败）：' + e.message + '。请确认地址栏是通过部署域名打开，而不是本地文件。');
+  }
+})();
+
 
 // ---------------------------------------------------------------- 加入
 $('enter').onclick = async () => {
+  const btn = $('enter');
   const name = ($('name').value || '').trim() || '玩家';
   let roomId = ($('roomId').value || '').trim().toUpperCase();
-  if (!roomId) {
-    const c = await post('/api/create', { playerCount: 8 });
-    if (!c.ok) return ($('msg').textContent = c.msg || '建房失败');
-    roomId = c.roomId;
+  btn.disabled = true;
+  $('msg').textContent = '连接中…（免费实例刚被唤醒时，第一个请求可能要 20–60 秒，请稍等）';
+  try {
+    if (!roomId) {
+      const c = await post('/api/create', { playerCount: 8 });
+      if (!c.ok) { $('msg').textContent = c.msg || '建房失败'; return; }
+      roomId = c.roomId;
+    }
+    const r = await post('/api/join', { roomId, name });
+    if (!r.ok) { $('msg').textContent = r.msg || '加入失败'; return; }
+    state.roomId = r.roomId; state.playerId = r.playerId; state.token = r.token;
+    $('overlay').style.display = 'none';
+    $('room').textContent = `房间 ${r.roomId} · 你 ${name}`;
+    $('who').textContent = `座位 #${r.playerId + 1}`;
+    $('startGame').style.display = '';
+    connect();
+  } finally {
+    btn.disabled = false;
   }
-  const r = await post('/api/join', { roomId, name });
-  if (!r.ok) return ($('msg').textContent = r.msg || '加入失败');
-  state.roomId = r.roomId; state.playerId = r.playerId; state.token = r.token;
-  $('overlay').style.display = 'none';
-  $('room').textContent = `房间 ${r.roomId} · 你 ${name}`;
-  $('who').textContent = `座位 #${r.playerId + 1}`;
-  $('startGame').style.display = '';
-  connect();
 };
 
 async function doStart() {
-  const r = await post('/api/start', { roomId: state.roomId, playerId: state.playerId, token: state.token, fillBots: true, minPlayers: 6 });
-  if (!r.ok) $('msg').textContent = r.msg || '开局失败';
+  $('startGame').disabled = true;
+  $('prompt').textContent = '开局中…（不足 6 人会自动补机器人）';
+  try {
+    const r = await post('/api/start', { roomId: state.roomId, playerId: state.playerId, token: state.token, fillBots: true, minPlayers: 6 });
+    if (!r.ok) $('prompt').textContent = r.msg || '开局失败';
+  } finally {
+    $('startGame').disabled = false;
+  }
 }
 $('startBtn').onclick = doStart;
 $('startGame').onclick = doStart;

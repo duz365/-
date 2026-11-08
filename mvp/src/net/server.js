@@ -63,6 +63,10 @@ const server = http.createServer(async (req, res) => {
       return res.end(UI);
     }
 
+    if (req.method === 'GET' && path === '/api/ping') {
+      return json(res, 200, { ok: true, version: '0.4', rooms: rooms.size, uptime: Math.round(process.uptime()) });
+    }
+
     if (path === '/healthz') {
       return json(res, 200, { ok: true, uptime: Math.round(process.uptime()), rooms: rooms.size });
     }
